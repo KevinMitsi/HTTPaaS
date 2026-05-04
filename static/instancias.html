@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HTTPaaS – Instancias</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f4f5f7;
+      --surface:   #ffffff;
+      --sidebar-bg:#0f1117;
+      --sidebar-w: 220px;
+      --accent:    #2563eb;
+      --accent-lt: #eff6ff;
+      --danger:    #dc2626;
+      --danger-lt: #fef2f2;
+      --text:      #111827;
+      --muted:     #6b7280;
+      --border:    #e5e7eb;
+      --green:     #16a34a;
+      --radius:    10px;
+      --shadow:    0 1px 4px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+    }
+
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+
+    /* ── SIDEBAR ── */
+    .sidebar { width: var(--sidebar-w); background: var(--sidebar-bg); display: flex; flex-direction: column; position: fixed; top:0; left:0; height:100vh; z-index:100; padding:0 0 24px; }
+    .sidebar-brand { padding:20px 20px 16px; border-bottom:1px solid rgba(255,255,255,.08); }
+    .sidebar-brand .logo-tag { font-family:'DM Mono',monospace; font-size:15px; font-weight:500; color:#fff; }
+    .sidebar-brand .logo-sub { font-size:10px; color:rgba(255,255,255,.4); letter-spacing:1.5px; text-transform:uppercase; margin-top:2px; }
+    .sidebar-nav { flex:1; padding:16px 12px; display:flex; flex-direction:column; gap:2px; }
+    .nav-item { display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:7px; color:rgba(255,255,255,.55); text-decoration:none; font-size:13px; font-weight:500; transition:background .15s,color .15s; }
+    .nav-item:hover { background:rgba(255,255,255,.07); color:rgba(255,255,255,.9); }
+    .nav-item.active { background:var(--accent); color:#fff; }
+    .nav-item svg { width:16px; height:16px; flex-shrink:0; }
+    .sidebar-footer { padding:12px 20px 0; border-top:1px solid rgba(255,255,255,.08); }
+    .status-dot { display:flex; align-items:center; gap:8px; font-size:11px; color:rgba(255,255,255,.4); }
+    .dot { width:7px; height:7px; border-radius:50%; background:var(--green); box-shadow:0 0 6px var(--green); }
+
+    /* ── TOPBAR ── */
+    .topbar { position:fixed; top:0; left:var(--sidebar-w); right:0; height:52px; background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; padding:0 32px; z-index:90; gap:16px; }
+    .topbar-title { font-size:13px; color:var(--muted); flex:1; }
+    .topbar-actions { display:flex; gap:8px; }
+
+    /* ── MAIN ── */
+    .main { margin-left:var(--sidebar-w); padding-top:52px; flex:1; }
+    .page-content { padding:36px 40px; }
+
+    .page-header { margin-bottom:24px; display:flex; align-items:flex-start; justify-content:space-between; }
+    .page-header-left h1 { font-size:22px; font-weight:600; }
+    .page-header-left p { font-size:13px; color:var(--muted); margin-top:4px; }
+
+    /* ── STATS ROW ── */
+    .stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:28px; }
+    .stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px 20px; box-shadow:var(--shadow); }
+    .stat-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:8px; }
+    .stat-value { font-size:28px; font-weight:700; font-family:'DM Mono',monospace; color:var(--text); }
+    .stat-value.accent { color:var(--accent); }
+    .stat-value.green  { color:var(--green); }
+    .stat-sub { font-size:11px; color:var(--muted); margin-top:4px; }
+
+    /* ── QUICK DEPLOY ── */
+    .quick-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); margin-bottom:24px; }
+    .quick-header { padding:14px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+    .quick-title { font-size:13px; font-weight:600; display:flex; align-items:center; gap:8px; }
+    .quick-title svg { width:14px; height:14px; color:var(--accent); }
+    .quick-body { padding:16px 20px; display:flex; gap:10px; align-items:flex-end; }
+    .quick-group { flex:1; }
+    .quick-group label { display:block; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.4px; margin-bottom:6px; }
+    input[type="text"] { width:100%; height:38px; padding:0 12px; border:1px solid var(--border); border-radius:7px; font-size:13px; font-family:'DM Mono',monospace; color:var(--text); background:#fafafa; transition:border-color .15s,box-shadow .15s; outline:none; }
+    input[type="text"]:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,.12); background:#fff; }
+    input[type="text"]::placeholder { color:#c0c4cc; font-family:'DM Sans',sans-serif; }
+
+    /* ── BUTTONS ── */
+    .btn { height:38px; padding:0 16px; border-radius:7px; font-size:13px; font-weight:500; font-family:'DM Sans',sans-serif; cursor:pointer; border:none; display:inline-flex; align-items:center; gap:6px; transition:background .15s,transform .1s,box-shadow .15s; white-space:nowrap; text-decoration:none; }
+    .btn:active { transform:scale(.97); }
+    .btn-primary { background:var(--accent); color:#fff; box-shadow:0 1px 3px rgba(37,99,235,.3); }
+    .btn-primary:hover { background:#1d4ed8; }
+    .btn-primary:disabled { background:#93c5fd; cursor:not-allowed; transform:none; }
+    .btn-secondary { background:var(--surface); color:var(--text); border:1px solid var(--border); }
+    .btn-secondary:hover { background:var(--bg); }
+    .btn-danger { background:var(--danger); color:#fff; font-size:12px; height:30px; padding:0 12px; border-radius:6px; }
+    .btn-danger:hover { background:#b91c1c; }
+    .btn-sm { height:32px; padding:0 12px; font-size:12px; }
+
+    /* ── TABLE ── */
+    .table-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+    .table-card-header { padding:14px 20px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; }
+    .table-card-title { font-size:13px; font-weight:600; display:flex; align-items:center; gap:10px; }
+    .badge { display:inline-flex; align-items:center; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+    .badge-green { background:#dcfce7; color:var(--green); }
+    .badge-gray { background:var(--border); color:var(--muted); }
+
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    thead th { text-align:left; font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; padding:11px 20px; border-bottom:1px solid var(--border); background:#f9fafb; white-space:nowrap; }
+    tbody tr { transition:background .12s; }
+    tbody tr:hover { background:#f9fafb; }
+    tbody td { padding:13px 20px; border-bottom:1px solid var(--border); vertical-align:middle; }
+    tbody tr:last-child td { border-bottom:none; }
+
+    .domain-cell { display:flex; align-items:center; gap:8px; }
+    .online-dot { width:7px; height:7px; background:var(--green); border-radius:50%; flex-shrink:0; animation:pulse 2s ease-in-out infinite; }
+    @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+    .domain-link { color:var(--accent); text-decoration:none; font-family:'DM Mono',monospace; font-size:12px; }
+    .domain-link:hover { text-decoration:underline; }
+
+    .ip-mono { font-family:'DM Mono',monospace; font-size:12px; color:var(--muted); }
+    .host-chip { display:inline-flex; align-items:center; background:var(--accent-lt); color:var(--accent); border-radius:5px; padding:2px 8px; font-size:12px; font-family:'DM Mono',monospace; font-weight:500; }
+    .date-text { font-size:12px; color:var(--muted); }
+
+    /* ── EMPTY STATE ── */
+    .empty-state { text-align:center; padding:72px 20px; }
+    .empty-icon { font-size:48px; margin-bottom:16px; opacity:.4; }
+    .empty-state h3 { font-size:15px; font-weight:600; margin-bottom:8px; }
+    .empty-state p { font-size:13px; color:var(--muted); max-width:320px; margin:0 auto 20px; line-height:1.6; }
+
+    /* ── MODAL ── */
+    .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); backdrop-filter:blur(3px); z-index:200; display:none; align-items:center; justify-content:center; }
+    .modal-overlay.open { display:flex; }
+    .modal { background:var(--surface); border-radius:12px; box-shadow:0 20px 60px rgba(0,0,0,.2); padding:28px; max-width:400px; width:90%; animation:modalIn .2s ease; }
+    @keyframes modalIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
+    .modal-icon { font-size:36px; margin-bottom:12px; }
+    .modal h3 { font-size:16px; font-weight:600; margin-bottom:8px; }
+    .modal p { font-size:13px; color:var(--muted); line-height:1.6; margin-bottom:20px; }
+    .modal-actions { display:flex; gap:10px; justify-content:flex-end; }
+
+    /* ── SPINNER ── */
+    .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation:spin .7s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+
+    /* ── TOAST ── */
+    .toast-container { position:fixed; bottom:24px; right:24px; z-index:999; display:flex; flex-direction:column; gap:8px; }
+    .toast { background:var(--sidebar-bg); color:#fff; padding:12px 16px; border-radius:8px; font-size:13px; box-shadow:0 4px 20px rgba(0,0,0,.25); display:flex; align-items:center; gap:10px; animation:slideUp .3s ease; max-width:320px; }
+    .toast.success { border-left:3px solid var(--green); }
+    .toast.error { border-left:3px solid var(--danger); }
+    @keyframes slideUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+    .search-input { height:32px; padding:0 10px; border:1px solid var(--border); border-radius:6px; font-size:12px; font-family:'DM Sans',sans-serif; color:var(--text); background:#fafafa; outline:none; width:180px; transition:border-color .15s; }
+    .search-input:focus { border-color:var(--accent); }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="logo-tag">HTTPaaS</div>
+    <div class="logo-sub">Cloud Infrastructure</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="index.html" class="nav-item">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h6a1 1 0 010 2H4a1 1 0 01-1-1z"/></svg>
+      Dashboard
+    </a>
+    <a href="despliegues.html" class="nav-item">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+      Despliegues
+    </a>
+    <a href="instancias.html" class="nav-item active">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+      Instancias
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="status-dot"><span class="dot"></span>DNS Bind9 · cloud.local</div>
+  </div>
+</aside>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <span class="topbar-title">Gestión de páginas y aplicaciones web</span>
+  <div class="topbar-actions">
+    <input type="text" class="search-input" id="searchInput" placeholder="Buscar instancia..." oninput="filterInstances()"/>
+    <a href="despliegues.html" class="btn btn-primary btn-sm">
+      <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd"/></svg>
+      Nueva instancia
+    </a>
+  </div>
+</div>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="page-content">
+
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Instancias</h1>
+        <p>Servidores Apache activos en el dominio <strong>cloud.local</strong></p>
+      </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="stat-label">Instancias activas</div>
+        <div class="stat-value green" id="statActive">0</div>
+        <div class="stat-sub">en cloud.local</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">IPs asignadas</div>
+        <div class="stat-value accent" id="statIPs">0</div>
+        <div class="stat-sub">192.168.10.x/24</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Registros DNS</div>
+        <div class="stat-value" id="statDNS">0</div>
+        <div class="stat-sub">tipo A en Bind9</div>
+      </div>
+    </div>
+
+    <!-- QUICK DEPLOY -->
+    <div class="quick-card">
+      <div class="quick-header">
+        <span class="quick-title">
+          <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+          Crear Nueva Instancia
+        </span>
+      </div>
+      <div class="quick-body">
+        <div class="quick-group">
+          <label>Host Name</label>
+          <input type="text" id="quickHost" placeholder="Ej. misitio1" oninput="checkQuick()"/>
+        </div>
+        <button class="btn btn-primary" id="btnDeploy" disabled onclick="quickDeploy()">
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+          Desplegar Instancia
+        </button>
+        <a href="despliegues.html" class="btn btn-secondary">Despliegue completo →</a>
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="table-card">
+      <div class="table-card-header">
+        <div class="table-card-title">
+          Instancias disponibles
+          <span class="badge badge-green" id="activeCountBadge" style="display:none">0 Activas</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="refreshAll()">
+          <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clip-rule="evenodd"/></svg>
+          Actualizar
+        </button>
+      </div>
+
+      <div id="tableWrapper">
+        <!-- populated by JS -->
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<!-- MODAL CONFIRM DELETE -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-icon">⚠️</div>
+    <h3>Eliminar instancia</h3>
+    <p id="modalMsg">¿Estás seguro de que deseas eliminar esta instancia? Se destruirá la máquina virtual y el registro DNS será removido del servidor Bind9.</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="modalConfirmBtn" onclick="confirmDelete()">Eliminar definitivamente</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+  let instances = [];
+  let pendingDelete = -1;
+
+  function loadInstances() {
+    instances = JSON.parse(localStorage.getItem('httpaas_instances') || '[]');
+  }
+
+  function checkQuick() {
+    const val = document.getElementById('quickHost').value.trim();
+    document.getElementById('btnDeploy').disabled = val.length < 2;
+  }
+
+  function quickDeploy() {
+    const host = document.getElementById('quickHost').value.trim();
+    if (!host) return;
+    const btn = document.getElementById('btnDeploy');
+    btn.innerHTML = '<span class="spinner"></span> Desplegando...';
+    btn.disabled = true;
+
+    setTimeout(() => {
+      const ip = '192.168.10.' + (30 + instances.length) + '/24';
+      const now = new Date();
+      const dateStr = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate())
+                    + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+      instances.push({ host, ip, domain: 'http://' + host + '.cloud.local', created: dateStr });
+      localStorage.setItem('httpaas_instances', JSON.stringify(instances));
+      render();
+      toast('✓ ' + host + '.cloud.local desplegado', 'success');
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg> Desplegar Instancia';
+      btn.disabled = true;
+      document.getElementById('quickHost').value = '';
+    }, 1800);
+  }
+
+  function pad(n) { return n < 10 ? '0'+n : n; }
+
+  function filterInstances() {
+    render();
+  }
+
+  function render() {
+    loadInstances();
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const filtered = instances.filter(i =>
+      i.host.includes(search) || i.ip.includes(search) || i.domain.includes(search)
+    );
+
+    document.getElementById('statActive').textContent = instances.length;
+    document.getElementById('statIPs').textContent = instances.length;
+    document.getElementById('statDNS').textContent = instances.length;
+
+    const badge = document.getElementById('activeCountBadge');
+    if (instances.length > 0) {
+      badge.style.display = 'inline-flex';
+      badge.textContent = instances.length + ' Activa' + (instances.length !== 1 ? 's' : '');
+    } else {
+      badge.style.display = 'none';
+    }
+
+    const wrapper = document.getElementById('tableWrapper');
+
+    if (filtered.length === 0) {
+      wrapper.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🖥️</div>
+          <h3>${instances.length === 0 ? 'No hay instancias activas' : 'Sin resultados'}</h3>
+          <p>${instances.length === 0
+            ? 'Define un hostname y despliega tu primera instancia usando el formulario de arriba o el flujo completo de despliegues.'
+            : 'Ninguna instancia coincide con tu búsqueda.'}</p>
+          ${instances.length === 0 ? '<a href="despliegues.html" class="btn btn-primary">Crear primera instancia</a>' : ''}
+        </div>`;
+      return;
+    }
+
+    wrapper.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Domain</th>
+            <th>IP Address</th>
+            <th>Host</th>
+            <th>Created</th>
+            <th style="text-align:right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${filtered.map((inst, i) => `
+            <tr>
+              <td>
+                <div class="domain-cell">
+                  <span class="online-dot"></span>
+                  <a href="${inst.domain}" target="_blank" class="domain-link">${inst.domain}</a>
+                </div>
+              </td>
+              <td><span class="ip-mono">${inst.ip}</span></td>
+              <td><span class="host-chip">${inst.host}</span></td>
+              <td><span class="date-text">${inst.created}</span></td>
+              <td style="text-align:right">
+                <button class="btn btn-danger" onclick="openModal(${instances.indexOf(inst)})">Eliminar</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function refreshAll() {
+    render();
+    toast('Lista actualizada', 'success');
+  }
+
+  // ── Modal ──────────────────────────────────────────────────────────────
+  function openModal(i) {
+    pendingDelete = i;
+    document.getElementById('modalMsg').textContent =
+      '¿Estás seguro de que deseas eliminar la instancia "' + instances[i].host + '"? ' +
+      'Se destruirá la máquina virtual y el registro DNS "' + instances[i].host + '.cloud.local" será removido del servidor Bind9.';
+    document.getElementById('modalOverlay').classList.add('open');
+  }
+
+  function closeModal() {
+    pendingDelete = -1;
+    document.getElementById('modalOverlay').classList.remove('open');
+  }
+
+  function confirmDelete() {
+    if (pendingDelete < 0) return;
+    const btn = document.getElementById('modalConfirmBtn');
+    btn.innerHTML = '<span class="spinner"></span> Eliminando...';
+    btn.disabled = true;
+
+    setTimeout(() => {
+      const host = instances[pendingDelete].host;
+      instances.splice(pendingDelete, 1);
+      localStorage.setItem('httpaas_instances', JSON.stringify(instances));
+      closeModal();
+      render();
+      toast('Instancia "' + host + '" eliminada correctamente.', 'error');
+      btn.textContent = 'Eliminar definitivamente';
+      btn.disabled = false;
+    }, 1200);
+  }
+
+  // Close modal on overlay click
+  document.getElementById('modalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+
+  // ── Toast ──────────────────────────────────────────────────────────────
+  function toast(msg, type='success') {
+    const container = document.getElementById('toasts');
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+
+  // Init
+  render();
+</script>
+</body>
+</html>

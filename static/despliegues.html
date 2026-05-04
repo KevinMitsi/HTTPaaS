@@ -1,0 +1,509 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>HTTPaaS – Nuevo Despliegue</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #f4f5f7;
+      --surface:   #ffffff;
+      --sidebar-bg:#0f1117;
+      --sidebar-w: 220px;
+      --accent:    #2563eb;
+      --accent-lt: #eff6ff;
+      --danger:    #dc2626;
+      --text:      #111827;
+      --muted:     #6b7280;
+      --border:    #e5e7eb;
+      --green:     #16a34a;
+      --green-lt:  #f0fdf4;
+      --radius:    10px;
+      --shadow:    0 1px 4px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+    }
+
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); display: flex; min-height: 100vh; }
+
+    /* ── SIDEBAR ── */
+    .sidebar { width: var(--sidebar-w); background: var(--sidebar-bg); display: flex; flex-direction: column; position: fixed; top:0; left:0; height: 100vh; z-index: 100; padding: 0 0 24px; }
+    .sidebar-brand { padding: 20px 20px 16px; border-bottom: 1px solid rgba(255,255,255,.08); }
+    .sidebar-brand .logo-tag { font-family: 'DM Mono', monospace; font-size: 15px; font-weight: 500; color: #fff; }
+    .sidebar-brand .logo-sub { font-size: 10px; color: rgba(255,255,255,.4); letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+    .sidebar-nav { flex: 1; padding: 16px 12px; display: flex; flex-direction: column; gap: 2px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 7px; color: rgba(255,255,255,.55); text-decoration: none; font-size: 13px; font-weight: 500; transition: background .15s, color .15s; }
+    .nav-item:hover { background: rgba(255,255,255,.07); color: rgba(255,255,255,.9); }
+    .nav-item.active { background: var(--accent); color: #fff; }
+    .nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+    .sidebar-footer { padding: 12px 20px 0; border-top: 1px solid rgba(255,255,255,.08); }
+    .status-dot { display: flex; align-items: center; gap: 8px; font-size: 11px; color: rgba(255,255,255,.4); }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+    /* ── TOPBAR ── */
+    .topbar { position: fixed; top: 0; left: var(--sidebar-w); right: 0; height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 32px; z-index: 90; }
+    .topbar-title { font-size: 13px; color: var(--muted); }
+
+    /* ── MAIN ── */
+    .main { margin-left: var(--sidebar-w); padding-top: 52px; flex: 1; }
+    .page-layout { display: grid; grid-template-columns: 1fr 320px; gap: 24px; padding: 36px 32px; max-width: 1100px; }
+
+    /* ── LEFT COLUMN ── */
+    .left-col {}
+    .page-header { margin-bottom: 24px; }
+    .page-header h1 { font-size: 22px; font-weight: 600; }
+    .page-header p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+    /* ── STEPS CARD ── */
+    .step-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 16px;
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+    .step-card.active { border-color: var(--accent); }
+    .step-card.done { border-color: var(--green); }
+
+    .step-card-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 20px;
+    }
+    .step-badge {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; font-weight: 700; flex-shrink: 0;
+    }
+    .step-badge.pending { background: var(--border); color: var(--muted); }
+    .step-badge.active  { background: var(--accent); color: #fff; }
+    .step-badge.done    { background: var(--green); color: #fff; }
+    .step-card-title { font-size: 14px; font-weight: 600; flex: 1; }
+    .step-card-subtitle { font-size: 12px; color: var(--muted); }
+    .step-status { font-size: 12px; font-weight: 500; }
+    .step-status.done { color: var(--green); }
+
+    .step-card-body {
+      padding: 0 20px 20px;
+      border-top: 1px solid var(--border);
+    }
+    .step-card-body.collapsed { display: none; }
+
+    /* ── FORM ELEMENTS ── */
+    label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 6px; margin-top: 16px; }
+    input[type="text"] {
+      width: 100%; height: 40px; padding: 0 12px;
+      border: 1px solid var(--border); border-radius: 7px;
+      font-size: 13px; font-family: 'DM Mono', monospace;
+      color: var(--text); background: #fafafa;
+      transition: border-color .15s, box-shadow .15s; outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.12); background: #fff; }
+    input[type="text"]::placeholder { color: #c0c4cc; font-family: 'DM Sans', sans-serif; }
+    input[type="text"][readonly] { background: var(--green-lt); border-color: rgba(22,163,74,.3); color: var(--green); }
+
+    .hint { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.5; }
+
+    /* file upload */
+    .file-upload-area {
+      border: 1.5px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center;
+      cursor: pointer; transition: border-color .15s, background .15s; background: #fafafa; position: relative;
+    }
+    .file-upload-area:hover { border-color: var(--accent); background: var(--accent-lt); }
+    .file-upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .upload-icon { font-size: 28px; margin-bottom: 8px; }
+    .upload-text { font-size: 13px; color: var(--muted); }
+    .upload-text strong { color: var(--accent); cursor: pointer; }
+    .upload-formats { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .file-selected-card {
+      display: none; align-items: center; justify-content: space-between;
+      background: var(--accent-lt); border: 1px solid rgba(37,99,235,.2); border-radius: 8px; padding: 12px 16px;
+    }
+    .file-selected-card.show { display: flex; }
+    .fsc-left { display: flex; align-items: center; gap: 12px; }
+    .fsc-icon { font-size: 22px; }
+    .fsc-name { font-size: 13px; font-family: 'DM Mono', monospace; font-weight: 500; color: var(--accent); }
+    .fsc-size { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .fsc-remove { background: none; border: none; cursor: pointer; color: var(--muted); font-size: 18px; padding: 2px 6px; border-radius: 4px; }
+    .fsc-remove:hover { color: var(--danger); }
+
+    .file-hint { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+    /* ── BUTTONS ── */
+    .btn { height: 38px; padding: 0 16px; border-radius: 7px; font-size: 13px; font-weight: 500; font-family: 'DM Sans', sans-serif; cursor: pointer; border: none; display: inline-flex; align-items: center; gap: 6px; transition: background .15s, transform .1s, box-shadow .15s; white-space: nowrap; }
+    .btn:active { transform: scale(.97); }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 1px 3px rgba(37,99,235,.3); }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; transform: none; }
+    .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { background: var(--bg); }
+
+    .btn-row { display: flex; justify-content: flex-end; margin-top: 16px; gap: 8px; }
+
+    /* ── RIGHT PANEL ── */
+    .right-panel {}
+    .panel-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .panel-card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+    .panel-card-body { padding: 16px 18px; }
+
+    .instance-item {
+      padding: 12px 0; border-bottom: 1px solid var(--border); animation: fadeIn .3s ease;
+    }
+    .instance-item:last-child { border-bottom: none; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+    .inst-domain { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--accent); text-decoration: none; }
+    .inst-domain:hover { text-decoration: underline; }
+    .inst-meta { font-size: 11px; color: var(--muted); margin-top: 3px; display: flex; gap: 8px; }
+    .online-dot { width: 6px; height: 6px; background: var(--green); border-radius: 50%; display: inline-block; }
+
+    .panel-empty { text-align: center; padding: 32px 16px; }
+    .panel-empty-icon { font-size: 28px; opacity: .4; margin-bottom: 8px; }
+    .panel-empty p { font-size: 12px; color: var(--muted); line-height: 1.5; }
+
+    /* ── SPINNER ── */
+    .spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── PROGRESS ── */
+    .progress-log {
+      background: #0f1117; border-radius: 8px; padding: 14px 16px; margin-top: 14px;
+      font-family: 'DM Mono', monospace; font-size: 11px; color: #a3e635;
+      min-height: 80px; max-height: 140px; overflow-y: auto; line-height: 1.7;
+    }
+    .progress-log .log-line { animation: fadeIn .3s ease; }
+
+    /* ── TOAST ── */
+    .toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 999; display: flex; flex-direction: column; gap: 8px; }
+    .toast { background: var(--sidebar-bg); color: #fff; padding: 12px 16px; border-radius: 8px; font-size: 13px; box-shadow: 0 4px 20px rgba(0,0,0,.25); display: flex; align-items: center; gap: 10px; animation: slideUp .3s ease; max-width: 300px; }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error { border-left: 3px solid var(--danger); }
+    @keyframes slideUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    .divider { height: 1px; background: var(--border); margin: 0; }
+  </style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="logo-tag">HTTPaaS</div>
+    <div class="logo-sub">Cloud Infrastructure</div>
+  </div>
+  <nav class="sidebar-nav">
+    <a href="index.html" class="nav-item">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1v-2zm0 6a1 1 0 011-1h6a1 1 0 010 2H4a1 1 0 01-1-1z"/></svg>
+      Dashboard
+    </a>
+    <a href="despliegues.html" class="nav-item active">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+      Despliegues
+    </a>
+    <a href="instancias.html" class="nav-item">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+      Instancias
+    </a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="status-dot"><span class="dot"></span>DNS Bind9 · cloud.local</div>
+  </div>
+</aside>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <span class="topbar-title">Gestión de páginas y aplicaciones web</span>
+</div>
+
+<!-- MAIN -->
+<main class="main">
+  <div class="page-layout">
+
+    <!-- LEFT -->
+    <div class="left-col">
+      <div class="page-header">
+        <h1>Nuevo Despliegue</h1>
+        <p>Configure y publique su nueva aplicación web estática.</p>
+      </div>
+
+      <!-- STEP 1 -->
+      <div class="step-card active" id="card1">
+        <div class="step-card-header">
+          <div class="step-badge active" id="badge1">1</div>
+          <div>
+            <div class="step-card-title">Configuración de Dominio</div>
+            <div class="step-card-subtitle">Defina el hostname para su instancia</div>
+          </div>
+          <span class="step-status done" id="status1" style="display:none">✓ Configurado</span>
+        </div>
+        <div class="step-card-body" id="body1">
+          <label>Nombre del host</label>
+          <input type="text" id="hostInput" placeholder="paisajes" oninput="checkHost()"/>
+          <p class="hint">El dominio final será <strong id="domainPreview">‹hostname›.cloud.local</strong> — solo letras minúsculas, números y guiones.</p>
+          <div class="btn-row">
+            <button class="btn btn-primary" id="btnAceptar" disabled onclick="aceptarHost()">
+              Aceptar
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2 -->
+      <div class="step-card" id="card2" style="opacity:.5; pointer-events:none;">
+        <div class="step-card-header">
+          <div class="step-badge pending" id="badge2">2</div>
+          <div>
+            <div class="step-card-title">Contenido de la Aplicación</div>
+            <div class="step-card-subtitle">Suba el archivo comprimido con su sitio web</div>
+          </div>
+          <span class="step-status done" id="status2" style="display:none">✓ Listo</span>
+        </div>
+        <div class="step-card-body collapsed" id="body2">
+          <label>Contenido web (comprimido)</label>
+          <div class="file-upload-area" id="dropArea">
+            <input type="file" accept=".zip,.tar.gz" id="fileInput" onchange="handleFile(this)"/>
+            <div class="upload-icon">📦</div>
+            <div class="upload-text"><strong>Examinar archivos</strong> o arrastre aquí</div>
+            <div class="upload-formats">Formatos aceptados: .zip, .tar.gz</div>
+          </div>
+          <div class="file-selected-card" id="fileSelected">
+            <div class="fsc-left">
+              <span class="fsc-icon">🗜️</span>
+              <div>
+                <div class="fsc-name" id="fscName">archivo.zip</div>
+                <div class="fsc-size" id="fscSize">0 MB · Preparado para subir</div>
+              </div>
+            </div>
+            <button class="fsc-remove" onclick="removeFile()">✕</button>
+          </div>
+          <p class="file-hint">Archivo seleccionado exitosamente. El contenido será extraído durante el proceso de despliegue.</p>
+
+          <!-- Progress log (hidden until publish) -->
+          <div class="progress-log" id="progressLog" style="display:none;"></div>
+
+          <div class="btn-row">
+            <button class="btn btn-secondary" onclick="resetStep1()">← Atrás</button>
+            <button class="btn btn-primary" id="btnPublicar" disabled onclick="publicar()">
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM6.293 6.707a1 1 0 010-1.414l3-3a1 1 0 011.414 0l3 3a1 1 0 01-1.414 1.414L11 5.414V13a1 1 0 11-2 0V5.414L7.707 6.707a1 1 0 01-1.414 0z" clip-rule="evenodd"/></svg>
+              Publicar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="right-panel">
+      <div class="panel-card">
+        <div class="panel-card-header">
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" style="color:var(--accent)"><path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+          Instancias Disponibles
+        </div>
+        <div class="panel-card-body" id="rightPanel">
+          <!-- rendered by JS -->
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+  let hostAccepted = false;
+  let currentHost  = '';
+  let fileObj      = null;
+  let instances    = JSON.parse(localStorage.getItem('httpaas_instances') || '[]');
+
+  function checkHost() {
+    const val = document.getElementById('hostInput').value.trim();
+    document.getElementById('domainPreview').textContent = val ? val + '.cloud.local' : '‹hostname›.cloud.local';
+    document.getElementById('btnAceptar').disabled = val.length < 2;
+  }
+
+  function aceptarHost() {
+    const val = document.getElementById('hostInput').value.trim();
+    if (!val) return;
+    currentHost = val;
+    hostAccepted = true;
+
+    // Mark step 1 done
+    document.getElementById('card1').classList.remove('active');
+    document.getElementById('card1').classList.add('done');
+    document.getElementById('badge1').classList.replace('active','done');
+    document.getElementById('badge1').textContent = '✓';
+    document.getElementById('status1').style.display = 'block';
+    document.getElementById('body1').classList.add('collapsed');
+    document.getElementById('hostInput').readOnly = true;
+
+    // Enable step 2
+    const card2 = document.getElementById('card2');
+    card2.style.opacity = '1';
+    card2.style.pointerEvents = 'auto';
+    card2.classList.add('active');
+    document.getElementById('badge2').classList.replace('pending','active');
+    document.getElementById('body2').classList.remove('collapsed');
+
+    toast('Host "' + val + '.cloud.local" configurado', 'success');
+    renderRightPanel();
+  }
+
+  function resetStep1() {
+    currentHost = ''; hostAccepted = false;
+    document.getElementById('card1').classList.add('active');
+    document.getElementById('card1').classList.remove('done');
+    document.getElementById('badge1').classList.replace('done','active');
+    document.getElementById('badge1').textContent = '1';
+    document.getElementById('status1').style.display = 'none';
+    document.getElementById('body1').classList.remove('collapsed');
+    document.getElementById('hostInput').readOnly = false;
+    document.getElementById('hostInput').value = '';
+
+    document.getElementById('card2').style.opacity = '.5';
+    document.getElementById('card2').style.pointerEvents = 'none';
+    document.getElementById('card2').classList.remove('active');
+    document.getElementById('badge2').classList.replace('active','pending');
+    document.getElementById('body2').classList.add('collapsed');
+    removeFile();
+  }
+
+  function handleFile(input) {
+    const file = input.files[0];
+    if (!file) return;
+    fileObj = file;
+    const sizeMB = (file.size / 1048576).toFixed(1);
+    document.getElementById('dropArea').style.display = 'none';
+    document.getElementById('fileSelected').classList.add('show');
+    document.getElementById('fscName').textContent = file.name;
+    document.getElementById('fscSize').textContent = sizeMB + ' MB · Preparado para subir';
+    document.getElementById('btnPublicar').disabled = false;
+  }
+
+  function removeFile() {
+    fileObj = null;
+    document.getElementById('fileInput').value = '';
+    document.getElementById('dropArea').style.display = 'block';
+    document.getElementById('fileSelected').classList.remove('show');
+    document.getElementById('btnPublicar').disabled = true;
+  }
+
+  // Drag & drop
+  const dropArea = document.getElementById('dropArea');
+  dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.style.borderColor='var(--accent)'; });
+  dropArea.addEventListener('dragleave', () => { dropArea.style.borderColor=''; });
+  dropArea.addEventListener('drop', e => {
+    e.preventDefault(); dropArea.style.borderColor='';
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile({ files: [file] });
+  });
+
+  function publicar() {
+    const btn = document.getElementById('btnPublicar');
+    const log = document.getElementById('progressLog');
+    btn.innerHTML = '<span class="spinner"></span> Desplegando...';
+    btn.disabled = true;
+    document.getElementById('fscRemove') && (document.getElementById('fscRemove').disabled = true);
+
+    // Show progress log
+    log.style.display = 'block';
+    log.innerHTML = '';
+
+    const steps = [
+      '→ Clonando disco multiconexión ApacheServer.vdi...',
+      '→ Creando máquina virtual "' + currentHost + '" en VirtualBox...',
+      '→ Configurando red interna (192.168.10.x/24)...',
+      '→ Iniciando VM y esperando SSH...',
+      '→ Registrando host DNS: ' + currentHost + ' → 192.168.10.' + (30 + instances.length),
+      '→ Transfiriendo contenido web (' + document.getElementById('fscName').textContent + ')...',
+      '→ Extrayendo archivos en /var/www/html/' + currentHost + '/',
+      '✓ Despliegue completado. Instancia en línea.',
+    ];
+
+    let i = 0;
+    const interval = setInterval(() => {
+      if (i >= steps.length) {
+        clearInterval(interval);
+        finalizarDespliegue();
+        return;
+      }
+      const line = document.createElement('div');
+      line.className = 'log-line';
+      line.textContent = steps[i];
+      log.appendChild(line);
+      log.scrollTop = log.scrollHeight;
+      i++;
+    }, 380);
+  }
+
+  function finalizarDespliegue() {
+    const ip = '192.168.10.' + (30 + instances.length) + '/24';
+    const now = new Date();
+    const dateStr = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate())
+                  + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    instances.push({ host: currentHost, ip, domain: 'http://' + currentHost + '.cloud.local', created: dateStr });
+    localStorage.setItem('httpaas_instances', JSON.stringify(instances));
+
+    toast('✓ ' + currentHost + '.cloud.local está en línea', 'success');
+    renderRightPanel();
+
+    // Mark step 2 done
+    document.getElementById('badge2').classList.replace('active','done');
+    document.getElementById('badge2').textContent = '✓';
+    document.getElementById('card2').classList.remove('active');
+    document.getElementById('card2').classList.add('done');
+    document.getElementById('status2').style.display = 'block';
+
+    setTimeout(() => {
+      if (confirm('¿Deseas crear otro despliegue?')) {
+        location.reload();
+      } else {
+        window.location.href = 'instancias.html';
+      }
+    }, 1500);
+  }
+
+  function pad(n) { return n < 10 ? '0'+n : n; }
+
+  function renderRightPanel() {
+    instances = JSON.parse(localStorage.getItem('httpaas_instances') || '[]');
+    const panel = document.getElementById('rightPanel');
+    if (instances.length === 0) {
+      panel.innerHTML = `
+        <div class="panel-empty">
+          <div class="panel-empty-icon">🖥️</div>
+          <p>No hay instancias activas.<br>Las instancias aparecerán aquí una vez finalice la publicación.</p>
+        </div>`;
+      return;
+    }
+    panel.innerHTML = instances.map(inst => `
+      <div class="instance-item">
+        <span class="online-dot"></span>
+        <a href="${inst.domain}" target="_blank" class="inst-domain"> ${inst.domain}</a>
+        <div class="inst-meta">
+          <span>${inst.ip}</span>
+          <span>·</span>
+          <span>${inst.host}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function toast(msg, type='success') {
+    const container = document.getElementById('toasts');
+    const el = document.createElement('div');
+    el.className = 'toast ' + type;
+    el.textContent = msg;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 4000);
+  }
+
+  // Init
+  renderRightPanel();
+</script>
+</body>
+</html>
