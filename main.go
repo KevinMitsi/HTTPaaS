@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"httpaas/api"
@@ -14,9 +16,11 @@ import (
 )
 
 func main() {
+	loadDotEnv(".env")
+
 	cfg := config.Load()
 	if cfg.SSHKeyPath == "" {
-		log.Fatal("HTTPAAS_SSH_KEY es requerido")
+		log.Fatal("SSH_KEY_PATH es requerido")
 	}
 
 	if err := os.MkdirAll(cfg.UploadTmpDir, 0o755); err != nil {
@@ -59,4 +63,31 @@ func main() {
 
 	log.Printf("HTTPaaS escuchando en %s", cfg.Port)
 	log.Fatal(server.ListenAndServe())
+}
+
+func loadDotEnv(path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, found := strings.Cut(line, "=")
+		if !found {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		value = strings.Trim(value, `"'`)
+		if key == "" || os.Getenv(key) != "" {
+			continue
+		}
+		_ = os.Setenv(key, value)
+	}
 }

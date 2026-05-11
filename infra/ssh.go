@@ -1,10 +1,12 @@
 package infra
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -93,6 +95,70 @@ func (c *SSHClient) CopyFile(host, localPath, remotePath string) error {
 
 	if err := session.Wait(); err != nil {
 		return fmt.Errorf("esperar copia SSH: %w", err)
+	}
+
+	return nil
+}
+
+func (c *SSHClient) SCPBytes(host string, data []byte, remotePath string) error {
+	client, err := c.dial(host)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+
+	session, err := client.NewSession()
+	if err != nil {
+		return fmt.Errorf("crear sesion SSH: %w", err)
+	}
+	defer session.Close()
+
+	stdin, err := session.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("stdin SSH: %w", err)
+	}
+
+	if err := session.Start(fmt.Sprintf("cat > %s", remotePath)); err != nil {
+		return fmt.Errorf("iniciar SCP bytes SSH: %w", err)
+	}
+
+	if _, err := io.Copy(stdin, bytes.NewReader(data)); err != nil {
+		_ = stdin.Close()
+		return fmt.Errorf("copiar bytes: %w", err)
+	}
+	_ = stdin.Close()
+
+	if err := session.Wait(); err != nil {
+		return fmt.Errorf("esperar SCP bytes SSH: %w", err)
+	}
+
+	return nil
+}
+
+func (c *SSHClient) CopyDir(host, localDir, remoteDir string) error {
+	if err := filepath.Walk(localDir, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
+		relPath, err := filepath.Rel(localDir, path)
+		if err != nil {
+			return fmt.Errorf("calcular ruta relativa: %w", err)
+		}
+
+		remotePath := remoteDir
+		if relPath != "." {
+			remotePath = filepath.ToSlash(filepath.Join(remoteDir, relPath))
+		}
+
+		if info.IsDir() {
+			_, err := c.Run(host, fmt.Sprintf("mkdir -p %q", remotePath))
+			return err
+		}
+
+		return c.CopyFile(host, path, remotePath)
+	}); err != nil {
+		return err
 	}
 
 	return nil

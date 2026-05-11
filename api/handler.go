@@ -56,7 +56,9 @@ func New(cfg config.Config, st *store.Store, vbox *infra.VBox, ssh *infra.SSHCli
 func (a *API) Register(mux *http.ServeMux) {
 	mux.Handle("/api/instancias", http.HandlerFunc(a.ListInstancias))
 	mux.Handle("/api/instancias/host", http.HandlerFunc(a.AceptarHost))
+	mux.Handle("/api/provisionar", http.HandlerFunc(a.Publicar))
 	mux.Handle("/api/instancias/publicar", http.HandlerFunc(a.Publicar))
+	mux.Handle("/api/eliminar/", http.HandlerFunc(a.Eliminar))
 	mux.Handle("/api/instancias/", http.HandlerFunc(a.Eliminar))
 }
 
@@ -170,77 +172,147 @@ func (a *API) Publicar(w http.ResponseWriter, r *http.Request) {
 		if !createdVM {
 			return
 		}
+		state, err := a.vbox.MachineState(host)
+		if err != nil {
+			log.Printf("rollback state error: %v", err)
+		} else {
+			log.Printf("rollback: estado actual de %s = %s", host, state)
+		}
+
 		if err := a.vbox.PowerOff(host); err != nil {
 			log.Printf("rollback poweroff: %v", err)
 		}
-		if err := a.vbox.UnregisterDelete(host); err != nil {
-			log.Printf("rollback unregister: %v", err)
+		// Required delay before unregister to avoid locked VM state.
+		time.Sleep(10 * time.Second)
+
+		if err := a.vbox.WaitUntilUnlocked(host, 60*time.Second, 2*time.Second); err != nil {
+			log.Printf("rollback wait unlocked: %v", err)
+		}
+		// Try unregistering multiple times in case VBoxManage reports the VM is locked.
+		if err := a.vbox.UnregisterDeleteRetry(host, 6, 5*time.Second); err != nil {
+			log.Printf("rollback unregister (after retries): %v", err)
 		}
 	}
 
-	if err := a.vbox.CloneVM(a.cfg.TemplateName, host); err != nil {
+	log.Printf("[PROVISIONAR %s] 1. clonando VM desde plantilla %s (snapshot %s)", host, a.cfg.TemplateName, a.cfg.SnapshotName)
+	if err := a.vbox.CloneLinkedVM(a.cfg.TemplateName, a.cfg.SnapshotName, host); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en CloneLinkedVM: %v", host, err)
 		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error clonando VM"})
 		return
 	}
 	createdVM = true
+	log.Printf("[PROVISIONAR %s] OK clonada", host)
 
+	log.Printf("[PROVISIONAR %s] 2. configurando memoria y adaptador de red", host)
 	if err := a.vbox.ModifyVM(host,
 		"--memory", "512",
 		"--cpus", "1",
-		"--nic1", "intnet",
-		"--intnet1", "red-local",
-		"--hostonlyadapter1", "vboxnet0",
+		"--nic1", "hostonly",
+		"--hostonlyadapter1", a.cfg.HostOnlyAdapter,
 	); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en ModifyVM: %v", host, err)
 		rollback()
 		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error configurando VM"})
 		return
 	}
+	log.Printf("[PROVISIONAR %s] OK configurada", host)
 
+	log.Printf("[PROVISIONAR %s] 3. iniciando VM", host)
 	if err := a.vbox.StartVM(host); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en StartVM: %v", host, err)
 		rollback()
 		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error iniciando VM"})
 		return
 	}
+	log.Printf("[PROVISIONAR %s] OK iniciada", host)
+
+	log.Printf("[PROVISIONAR %s] 4. esperando Guest Additions (hasta 5m, cada 5s)", host)
+	if err := a.vbox.WaitForGuestAdditions(host, 5*time.Minute, 5*time.Second); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en WaitForGuestAdditions: %v", host, err)
+		rollback()
+		writeJSON(w, http.StatusGatewayTimeout, errorResponse{OK: false, Error: "guest additions no disponibles"})
+		return
+	}
+	log.Printf("[PROVISIONAR %s] OK Guest Additions activas", host)
+
+	log.Printf("[PROVISIONAR %s] 5. esperando guestcontrol listo (hasta 5m, cada 5s)", host)
+	if err := a.vbox.WaitForGuestControlReady(host, "root", "root", 5*time.Minute, 5*time.Second); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en WaitForGuestControlReady: %v", host, err)
+		rollback()
+		writeJSON(w, http.StatusGatewayTimeout, errorResponse{OK: false, Error: "guestcontrol no disponible"})
+		return
+	}
+	log.Printf("[PROVISIONAR %s] OK guestcontrol listo", host)
+
+	log.Printf("[PROVISIONAR %s] 6. configurando IP estática via guestcontrol (%s)", host, ip)
+	if err := a.vbox.ConfigureStaticIPViaGuestControlWithRetry(host, "root", "root", "enp0s3", ip, "255.255.255.0", 12, 5*time.Second); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en ConfigureStaticIPViaGuestControl: %v", host, err)
+		rollback()
+		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error configurando red por guestcontrol"})
+		return
+	}
+	log.Printf("[PROVISIONAR %s] OK IP estática configurada por guestcontrol", host)
+
+	log.Printf("[PROVISIONAR %s] 7. esperando 10s para aplicar red antes de SSH", host)
+	time.Sleep(10 * time.Second)
 
 	waitTimeout := time.Duration(a.cfg.SSHWaitTimeoutSeconds) * time.Second
 	waitInterval := time.Duration(a.cfg.SSHRetrySeconds) * time.Second
+	log.Printf("[PROVISIONAR %s] 8. probando SSH en %s (timeout %s, interval %s)", host, ip, waitTimeout, waitInterval)
 	if err := a.ssh.WaitForSSH(ip, waitTimeout, waitInterval); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en WaitForSSH: %v", host, err)
 		rollback()
 		writeJSON(w, http.StatusGatewayTimeout, errorResponse{OK: false, Error: "SSH no disponible"})
 		return
 	}
+	log.Printf("[PROVISIONAR %s] OK SSH disponible", host)
 
+	log.Printf("[PROVISIONAR %s] 9. configurando hostname", host)
 	if err := infra.ConfigureHostname(a.ssh, ip, host); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en ConfigureHostname: %v", host, err)
 		rollback()
 		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error configurando hostname"})
 		return
 	}
+	log.Printf("[PROVISIONAR %s] OK hostname configurado", host)
 
+	log.Printf("[PROVISIONAR %s] 10. registrando en DNS via SSH en vm-ns1 (%s)", host, a.cfg.DNSServerIP)
 	if err := infra.AddDNS(a.ssh, a.cfg.DNSServerIP, a.cfg.Domain, host, ip); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en AddDNS: %v", host, err)
 		rollback()
 		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error registrando DNS"})
 		return
 	}
+	log.Printf("[PROVISIONAR %s] OK DNS registrado", host)
 
-	remoteZip := fmt.Sprintf("/tmp/%s_upload.zip", host)
-	if err := a.ssh.CopyFile(ip, tmpPath, remoteZip); err != nil {
-		rollback()
-		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error transfiriendo archivo"})
-		return
-	}
-
-	if err := infra.DeployContent(a.ssh, ip, host, remoteZip); err != nil {
+	log.Printf("[PROVISIONAR %s] 11. descomprimiendo y copiando contenido web", host)
+	if err := infra.DeployContent(a.ssh, ip, host, tmpPath); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en DeployContent: %v", host, err)
 		rollback()
 		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error desplegando contenido"})
 		return
 	}
+	log.Printf("[PROVISIONAR %s] OK contenido desplegado", host)
 
+	log.Printf("[PROVISIONAR %s] 12. configurando Apache VirtualHost", host)
 	if err := infra.ConfigureVirtualHost(a.ssh, ip, host, a.cfg.Domain); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en ConfigureVirtualHost: %v", host, err)
 		rollback()
 		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error configurando apache"})
 		return
 	}
+	log.Printf("[PROVISIONAR %s] OK VirtualHost configurado", host)
 
+	log.Printf("[PROVISIONAR %s] 13. configurando networking estática", host)
+	if err := infra.ConfigureStaticNetworking(a.ssh, ip, host, ip, a.cfg.DNSServerIP); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en ConfigureStaticNetworking: %v", host, err)
+		rollback()
+		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error configurando red estática"})
+		return
+	}
+	log.Printf("[PROVISIONAR %s] OK networking configurado", host)
+
+	log.Printf("[PROVISIONAR %s] 14. guardando en store", host)
 	inst := store.Instance{
 		Host:    host,
 		IP:      fmt.Sprintf("%s/24", ip),
@@ -249,10 +321,12 @@ func (a *API) Publicar(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := a.store.Add(inst); err != nil {
+		log.Printf("[PROVISIONAR %s] ERROR en store.Add: %v", host, err)
 		rollback()
 		writeJSON(w, http.StatusInternalServerError, errorResponse{OK: false, Error: "error guardando instancia"})
 		return
 	}
+	log.Printf("[PROVISIONAR %s] ✓ ÉXITO - instancia completada", host)
 
 	writeJSON(w, http.StatusOK, okInstanceResponse{OK: true, Instance: inst})
 }
@@ -263,7 +337,8 @@ func (a *API) Eliminar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host := strings.TrimPrefix(r.URL.Path, "/api/instancias/")
+	host := strings.TrimPrefix(r.URL.Path, "/api/eliminar/")
+	host = strings.TrimPrefix(host, "/api/instancias/")
 	host = strings.TrimSpace(host)
 	if !isValidHost(host) {
 		writeJSON(w, http.StatusBadRequest, errorResponse{OK: false, Error: "hostname invalido"})
