@@ -2,7 +2,6 @@ package infra
 
 import (
 	"fmt"
-	"log"
 	"regexp"
 	"sort"
 	"strconv"
@@ -108,7 +107,6 @@ func writeDNSState(sshClient *SSHClient, dnsIP, domain, zoneFile string, state d
 	}
 
 	cmd := "mv /tmp/db.cloud.local.tmp /etc/bind/db.cloud.local && named-checkzone cloud.local /etc/bind/db.cloud.local && rndc reload cloud.local"
-	log.Printf("[DNS DEBUG] comando SSH:\n%s\n", cmd)
 
 	output, err := sshClient.Run(dnsIP, cmd)
 	if err != nil {

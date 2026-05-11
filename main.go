@@ -40,6 +40,12 @@ func main() {
 	vbox := infra.NewVBox(cfg.VBoxManagePath)
 	apiServer := api.New(cfg, st, vbox, sshClient)
 
+	// Ensure DNS server is running before starting HTTPaaS
+	log.Println("[STARTUP] Verificando servidor DNS local (vm-ns1)...")
+	if err := vbox.EnsureDNSServerRunning("vm-ns1"); err != nil {
+		log.Fatalf("error iniciando vm-ns1: %v", err)
+	}
+
 	mux := http.NewServeMux()
 	apiServer.Register(mux)
 

@@ -168,3 +168,9 @@ nohup systemctl restart networking >/tmp/networking-restart.log 2>&1 &
 	_, err := sshClient.Run(hostIP, cmd)
 	return err
 }
+
+func DisableDefaultSite(sshClient *SSHClient, hostIP string) error {
+	cmd := "sudo a2dissite 000-default.conf && sudo systemctl restart apache2"
+	_, err := sshClient.Run(hostIP, cmd)
+	return err
+}

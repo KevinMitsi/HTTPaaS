@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -303,6 +304,11 @@ func (a *API) Publicar(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Printf("[PROVISIONAR %s] OK VirtualHost configurado", host)
 
+	// Silently disable default Apache site
+	if err := infra.DisableDefaultSite(a.ssh, ip); err != nil {
+		log.Printf("[PROVISIONAR %s] warning: no se pudo desactivar sitio default: %v", host, err)
+	}
+
 	log.Printf("[PROVISIONAR %s] 13. configurando networking estática", host)
 	if err := infra.ConfigureStaticNetworking(a.ssh, ip, host, ip, a.cfg.DNSServerIP); err != nil {
 		log.Printf("[PROVISIONAR %s] ERROR en ConfigureStaticNetworking: %v", host, err)
@@ -327,6 +333,16 @@ func (a *API) Publicar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Printf("[PROVISIONAR %s] ✓ ÉXITO - instancia completada", host)
+
+	// Ejecutar comando SSH en PowerShell desde el host Windows para desactivar
+	// el sitio por nombre y reiniciar apache en la VM recién provisionada.
+	go func() {
+		sshKey := `C:\Users\Mary\\.ssh\\id_rsa`
+		// Usamos la IP de la VM y el hostname para componer el comando.
+		cmdStr := fmt.Sprintf(`ssh -i "%s" root@%s "sudo a2dissite %s.conf && sudo systemctl restart apache2"`, sshKey, ip, host)
+		cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", cmdStr)
+		_, _ = cmd.CombinedOutput()
+	}()
 
 	writeJSON(w, http.StatusOK, okInstanceResponse{OK: true, Instance: inst})
 }

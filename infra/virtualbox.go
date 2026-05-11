@@ -243,3 +243,23 @@ func (v *VBox) snapshotExists(templateName, snapshotName string) (bool, error) {
 	text := string(output)
 	return strings.Contains(text, fmt.Sprintf("SnapshotName=\"%s\"", snapshotName)) || strings.Contains(text, fmt.Sprintf("Name=\"%s\"", snapshotName)), nil
 }
+
+func (v *VBox) EnsureDNSServerRunning(dnsServerName string) error {
+	state, err := v.MachineState(dnsServerName)
+	if err != nil {
+		return fmt.Errorf("no se pudo obtener estado de %s: %w", dnsServerName, err)
+	}
+
+	if state == "running" {
+		log.Printf("[STARTUP] %s ya está encendida", dnsServerName)
+		return nil
+	}
+
+	log.Printf("[STARTUP] %s no está encendida (estado: %s), iniciando...", dnsServerName, state)
+	if err := v.StartVM(dnsServerName); err != nil {
+		return fmt.Errorf("no se pudo encender %s: %w", dnsServerName, err)
+	}
+
+	log.Printf("[STARTUP] %s iniciada correctamente", dnsServerName)
+	return nil
+}
